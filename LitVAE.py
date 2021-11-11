@@ -5,9 +5,18 @@ Created on Mon Nov  8 11:06:29 2021
 @author: 15626
 """
 
+import os
+import torch
+from torch import nn
+import torch.nn.functional as F
+from torchvision import transforms
+from torch.utils.data import DataLoader, random_split
+import pytorch_lightning as pl
+from TaggingDataModule import TaggingDataModule
+
 class LitVAE(pl.LightningModule):
     def __init__(self):
-        super(VAE, self).__init__()
+        super().__init__()
 
         self.encoder =torch.nn.Sequential(
         torch.nn.Conv2d(1, 32, kernel_size=3, stride=2, padding=1),#64*64
@@ -81,14 +90,8 @@ class LitVAE(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         # training_step defined the train loop.
         # It is independent of forward
-        if torch.cuda.is_available():
-           cuda = True
-           device = 'cuda'
-        else:
-           cuda = False
-           device = 'cpu'
         
-        x, y = batch
+        x, _ = batch
         x = x.view(x.size(0), -1)   
         out1=self.encoder(x)
         mu=self.get_mu(out1.view(out1.size(0),-1))#64,128*7*7->64,32
@@ -102,7 +105,61 @@ class LitVAE(pl.LightningModule):
         out = self.decoder(out3)
         loss, bce, kld = loss_function(out, x, mu, log_var)
         self.log("train_loss", loss)
-        return loss, bce, kld
+        return {"loss": loss, "pred": pred}
+    
+    def training_step_end(self, batch_parts):
+        # predictions from each GPU
+        predictions = batch_parts["pred"]
+        # losses from each GPU
+        losses = batch_parts["loss"]
+
+        gpu_0_prediction = predictions[0]
+        gpu_1_prediction = predictions[1]
+
+        # do something with both outputs
+        return (losses[0] + losses[1]) / 2
+    
+    def validation_step(self, batch, batch_idx):
+        
+        x, _ = batch
+        x = x.view(x.size(0), -1)   
+        out1=self.encoder(x)
+        mu=self.get_mu(out1.view(out1.size(0),-1))#64,128*7*7->64,32
+        out2=self.encoder(x)
+        logvar=self.get_logvar(out2.view(out2.size(0),-1))
+
+        z=self.get_z(mu,logvar)
+        out3=self.get_temp(z).view(z.size(0),128,32,32)
+        #out3=self.get_temp(z).view(z.size(0),128,7,7)
+        #generated_imgs = z.view(z.size(0), 1, 256, 192)
+        out = self.decoder(out3)
+        loss, bce, kld = loss_function(out, x, mu, log_var)
+        self.log("val_loss", loss)
+        return {"loss": loss, "pred": pred}
+    
+    def validation_step_end(self, batch_parts):
+        # predictions from each GPU
+        predictions = batch_parts["pred"]
+        # losses from each GPU
+        losses = batch_parts["loss"]
+
+        gpu_0_prediction = predictions[0]
+        gpu_1_prediction = predictions[1]
+
+        # do something with both outputs
+        return (losses[0] + losses[1]) / 2
+    
+    def loss_function(recon_x, x, mu, log_var):
+        L1_loss = nn.L1Loss(reduction='sum')#
+        BCE = L1_loss(recon_x, x)
+        L2_loss = nn.MSELoss()
+        MSE = L2_loss (recon_x, x)
+        #BCE = F.binary_cross_entropy(recon_x, x, reduction='sum')
+        KLD = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp())
+        #return BCE + KLD, BCE, KLD
+        #loss = BCE+ 0.000000000002 * KLD
+        loss = BCE
+        return loss
     
 # =============================================================================
 #     def training_step(self, batch, batch_idx):
@@ -120,4 +177,10 @@ class LitVAE(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        num_training_samples = len(self.trainer.datamodule.train_dataloader())
         return optimizer
+    
+    def configure_callbacks(self):
+        early_stop = EarlyStopping(monitor="val_acc", mode="max")
+        checkpoint = ModelCheckpoint(monitor="val_loss")
+        return [early_stop, checkpoint]
