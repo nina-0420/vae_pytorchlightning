@@ -1,0 +1,23 @@
+model_params:
+  name: 'VAE'
+  in_channels: 1
+  latent_dim: 256
+
+exp_params:
+  dataset: tagging
+  data_path: "D:/lab/code/MNIST-VAE-main/data_test/"
+  img_size: 128
+  batch_size: 128 # Better to have a square number
+  LR: 0.005
+  weight_decay: 0.0
+  scheduler_gamma: 0.95
+
+trainer_params:
+  gpus: 1
+  max_nb_epochs: 50
+  max_epochs: 30
+
+logging_params:
+  save_dir: "D:/lab/code/MNIST-VAE-main/logs/"
+  name: "VAE"
+  manual_seed: 128
