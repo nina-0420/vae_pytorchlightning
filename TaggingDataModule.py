@@ -5,7 +5,9 @@ Created on Sun Nov  7 16:02:34 2021
 @author: 15626
 """
 
-class TaggingDataModule(LightningDataModule):
+import pytorch_lightning as pl
+
+class TaggingDataModule(pl.LightningDataModule):
     def __init__(self, batch_size=4):
         super().__init__()
         self.batch_size = batch_size
@@ -45,18 +47,7 @@ class TaggingDataModule(LightningDataModule):
         #MNIST(os.getcwd(), train=True, download=True)
         #MNIST(os.getcwd(), train=False, download=True)
 
-    # OPTIONAL, called for every GPU/machine (assigning state is OK)
-    def setup(self, stage: Optional[str] = None):
-        # transforms
-        transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
-        # split dataset
-        if stage in (None, "fit"):
-            mnist_train = MNIST(os.getcwd(), train=True, transform=transform)
-            self.mnist_train, self.mnist_val = random_split(mnist_train, [55000, 5000])
-        if stage == "test":
-            self.mnist_test = MNIST(os.getcwd(), train=False, transform=transform)
-        if stage == "predict":
-            self.mnist_predict = MNIST(os.getcwd(), train=False, transform=transform)
+    
 
     # return the dataloader for each split
     def train_dataloader(self):
